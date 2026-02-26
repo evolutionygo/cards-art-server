@@ -1,4 +1,4 @@
---평범한 홍이
+--궁극의 홍이
 local s,id,o=GetID()
 function s.initial_effect(c)
 	--special summon
@@ -34,7 +34,7 @@ function s.spcon(e,c)
 	local tp=c:GetControler()
 	local rg=Duel.GetReleaseGroup(tp,false,REASON_SPSUMMON)
 	return Duel.IsExistingMatchingCard(s.cfilter,tp,LOCATION_ONFIELD,0,1,nil)
-		and rg:CheckSubGroup(aux.mzctcheckrel,1,1,tp,REASON_SPSUMMON)
+		and rg:CheckSubGroup(aux.mzctcheckrel,2,2,tp,REASON_SPSUMMON)
 end
 function s.sptg(e,tp,eg,ep,ev,re,r,rp,chk,c)
 	local rg=Duel.GetReleaseGroup(tp,false,REASON_SPSUMMON)

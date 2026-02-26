@@ -1,4 +1,4 @@
---평범한 홍이
+--강력한 홍이
 local s,id,o=GetID()
 function s.initial_effect(c)
 	--special summon
