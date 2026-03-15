@@ -59,9 +59,12 @@ end
 -- =======================================================================
 -- [MANUAL XYZ LOGIC]
 -- =======================================================================
+
+-- [แก้ไขจุดนี้จุดเดียว] เพิ่มเงื่อนไข Race Machine
 function s.xyzfilter(c,xyzc)
-	return c:IsFaceup() and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
+	return c:IsFaceup() and c:IsRace(RACE_MACHINE) and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
 end
+
 function s.xyzcheck(g,tp,xyzc)
 	return g:GetCount()==2
 end
@@ -101,7 +104,7 @@ function s.xyzop(e,tp,eg,ep,ev,re,r,rp,c,og,min,max)
 end
 
 -- =======================================================================
--- [EFFECT LOGIC]
+-- [EFFECT LOGIC] (ส่วนนี้เหมือนเดิม 100%)
 -- =======================================================================
 
 -- [Effect 1] AOE Position Change & DEF 0

@@ -1,4 +1,5 @@
--- Burst: Missile Container Online (ID: 99900015)
+-- Burst: Missile Container Online
+-- ID: 99900015
 local s,id=GetID()
 local VESTI_ID = 99900014
 local TACTICAL_FLAG_ID = 99900009
@@ -6,6 +7,7 @@ local TACTICAL_FLAG_ID = 99900009
 function s.initial_effect(c)
 	-- Activate
 	local e1=Effect.CreateEffect(c)
+	-- เปลี่ยน Category
 	e1:SetCategory(CATEGORY_ATKCHANGE+CATEGORY_DESTROY+CATEGORY_TODECK)
 	e1:SetType(EFFECT_TYPE_ACTIVATE)
 	e1:SetCode(EVENT_FREE_CHAIN)
@@ -21,15 +23,12 @@ function s.vesti_filter(c)
 end
 
 function s.condition(e,tp,eg,ep,ev,re,r,rp)
-	-- เงื่อนไขเดียว: ต้องมี Vesti ยืนอยู่
 	return Duel.IsExistingMatchingCard(s.vesti_filter,tp,LOCATION_MZONE,0,1,nil)
 end
 
 function s.target(e,tp,eg,ep,ev,re,r,rp,chk)
-	-- [แก้ไข] กดใช้ได้เสมอ (return true) ไม่ต้องเช็คมอนสเตอร์ฝ่ายตรงข้าม
 	if chk==0 then return true end
 	
-	-- Set Info ไว้โชว์เฉยๆ (ถ้ามีเป้าให้โดน)
 	local g=Duel.GetMatchingGroup(Card.IsFaceup,tp,0,LOCATION_MZONE,nil)
 	if #g>0 then
 		Duel.SetOperationInfo(0,CATEGORY_ATKCHANGE,g,#g,0,-2000)
@@ -43,13 +42,14 @@ end
 
 -- Filter Functions
 function s.hand_filter(c)
+	-- ต้องเช็ค AbleToDeck
 	return c:IsType(TYPE_MONSTER) and c:GetAttack()<=2000 and c:IsAbleToDeck()
 end
 function s.backrow_filter(c)
 	return c:IsType(TYPE_SPELL+TYPE_TRAP) and c:IsAbleToDeck()
 end
 
--- Immediate Nuke Function
+-- Immediate Nuke
 function s.apply_immediate_nuke(tp, value, reason_effect)
 	local g=Duel.GetMatchingGroup(Card.IsFaceup,tp,0,LOCATION_MZONE,nil)
 	if #g>0 then
@@ -61,7 +61,6 @@ function s.apply_immediate_nuke(tp, value, reason_effect)
 			e1:SetReset(RESET_EVENT+RESETS_STANDARD)
 			tc:RegisterEffect(e1)
 		end
-		-- ทำลายพวกที่พลัง <= 1000 (หลังจากลดแล้ว)
 		local dg=g:Filter(function(c) return c:GetAttack()<=1000 end, nil)
 		if #dg>0 then
 			Duel.BreakEffect()
@@ -73,35 +72,30 @@ end
 function s.activate(e,tp,eg,ep,ev,re,r,rp)
 	local c=e:GetHandler()
 	
-	-- 1. Immediate Effect (ทำงานเฉพาะถ้ามีมอนสเตอร์)
+	-- 1. Nuke
 	s.apply_immediate_nuke(tp, 2000, c)
 	
-	-- 2. Lingering Effect (Shared Ammo Mode)
-	-- สร้างระบบนับจำนวนกระสุน 3 นัด โดยใช้ Dummy Effect
+	-- 2. Lingering Effect (Shared Ammo 3 Shots)
 	local ammo_counter = Effect.CreateEffect(c)
-	ammo_counter:SetType(EFFECT_TYPE_FIELD) -- เป็น Field Effect เพื่อให้เกาะอยู่กับ Duel
-	ammo_counter:SetCode(0) -- ไม่ต้องมี Code จริงๆ แค่เอาไว้เก็บ Label
-	ammo_counter:SetLabel(3) -- เริ่มต้น 3 นัด
-	-- หมายเหตุ: ไม่ใส่ Reset เพื่อให้มันอยู่ไปเรื่อยๆ จนกว่ากระสุนจะหมด (หรือจบดูเอล)
+	ammo_counter:SetType(EFFECT_TYPE_FIELD)
+	ammo_counter:SetCode(0)
+	ammo_counter:SetLabel(3)
 	Duel.RegisterEffect(ammo_counter,tp)
 	
-	-- ฟังก์ชันสร้างตัวจับการอัญเชิญ
 	local function slifer_curse(event_code)
 		local e2=Effect.CreateEffect(c)
 		e2:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
 		e2:SetCode(event_code)
-		e2:SetLabelObject(ammo_counter) -- ผูกกับตัวนับกระสุน
+		e2:SetLabelObject(ammo_counter)
 		e2:SetCondition(s.slifer_con)
 		e2:SetOperation(s.slifer_op)
 		Duel.RegisterEffect(e2,tp)
 	end
-	
-	-- ดักจับทุกการอัญเชิญ
 	slifer_curse(EVENT_SUMMON_SUCCESS)
 	slifer_curse(EVENT_SPSUMMON_SUCCESS)
 	slifer_curse(EVENT_FLIP_SUMMON_SUCCESS)
 	
-	-- 3. Bonus: Shuffle Hand/Backrow (Tactical Mode)
+	-- 3. [UPDATED] Bonus: Place on Bottom of Deck
 	if Duel.GetFlagEffect(tp,TACTICAL_FLAG_ID)>0 then
 		local hg=Duel.GetFieldGroup(tp,0,LOCATION_HAND)
 		local bg=Duel.GetMatchingGroup(s.backrow_filter,tp,0,LOCATION_ONFIELD,nil)
@@ -122,9 +116,19 @@ function s.activate(e,tp,eg,ep,ev,re,r,rp)
 				to_deck_group:Merge(bg)
 			end
 			
-			-- ส่งกลับเด็ค
+			-- [KEY CHANGE] Send to Deck Bottom
 			if #to_deck_group>0 then
-				Duel.SendtoDeck(to_deck_group,nil,SEQ_DECKSHUFFLE,REASON_EFFECT)
+				-- SEQ_DECKBOTTOM = วางใต้สุด
+				Duel.SendtoDeck(to_deck_group,nil,SEQ_DECKBOTTOM,REASON_EFFECT)
+				
+				-- ถ้าต้องการสลับลำดับการวางใต้เด็ค (เผื่อมีหลายใบ)
+				-- ปกติระบบจะจัดการให้เอง หรือถ้าอยากให้สุ่มลำดับใต้เด็ค ใช้ sort=false
+				local og=Duel.GetOperatedGroup()
+				if #og>0 then
+					-- ใน OCG/TCG การวางใต้เด็ค ถ้าหลายใบ ผู้เล่นเจ้าของเด็คจัดลำดับได้
+					-- แต่ใน Script เพื่อความเร็ว เรามักจะปล่อย Auto
+					-- ถ้าอยากให้เรียงสวยๆ ก็ไม่ต้องทำอะไรเพิ่มครับ
+				end
 			end
 		end
 	end
@@ -135,10 +139,9 @@ function s.slifer_filter(c,tp)
 end
 
 function s.slifer_con(e,tp,eg,ep,ev,re,r,rp)
-	-- ดึงตัวแปรกลางมาเช็ค
 	local ammo_obj = e:GetLabelObject()
 	if not ammo_obj or ammo_obj:GetLabel() <= 0 then
-		e:Reset() -- ถ้ากระสุนหมดแล้ว ให้ลบเอฟเฟคดักจับทิ้งไปเลย
+		e:Reset() 
 		return false
 	end
 	return eg:IsExists(s.slifer_filter,1,nil,tp)
@@ -173,14 +176,9 @@ function s.slifer_op(e,tp,eg,ep,ev,re,r,rp)
 			Duel.Destroy(dg,REASON_EFFECT)
 		end
 		
-		-- ลดจำนวนกระสุนลง 1 นัด
 		local new_ammo = current_ammo - 1
 		ammo_obj:SetLabel(new_ammo)
 		
-		-- แจ้งเตือนจำนวนกระสุนที่เหลือ (Optional)
-		-- Duel.Hint(HINT_MESSAGE, 1-tp, "Missile Ammo Left: "..new_ammo)
-		
-		-- ถ้ากระสุนหมด (0) ให้เคลียร์ทิ้ง
 		if new_ammo <= 0 then
 			ammo_obj:Reset()
 			e:Reset()

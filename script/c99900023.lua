@@ -9,7 +9,7 @@ function s.initial_effect(c)
 	c:EnableReviveLimit()
 	aux.AddSynchroProcedure(c,nil,aux.NonTuner(s.matfilter),1,99)
 
-	-- 1. Cannot be targeted (กันเลือกเป้า)
+	-- 1. Cannot be targeted
 	local e1=Effect.CreateEffect(c)
 	e1:SetType(EFFECT_TYPE_SINGLE)
 	e1:SetProperty(EFFECT_FLAG_SINGLE_RANGE)
@@ -21,11 +21,13 @@ function s.initial_effect(c)
 	-- 2. Tribute Opponent Monster & Spawn Token (Quick Effect)
 	local e2=Effect.CreateEffect(c)
 	e2:SetDescription(aux.Stringid(id,0))
-	e2:SetCategory(CATEGORY_RELEASE+CATEGORY_SPECIAL_SUMMON+CATEGORY_TOKEN)
+	e2:SetCategory(CATEGORY_SPECIAL_SUMMON+CATEGORY_TOKEN)
 	e2:SetType(EFFECT_TYPE_QUICK_O)
 	e2:SetCode(EVENT_FREE_CHAIN)
 	e2:SetRange(LOCATION_MZONE)
 	e2:SetCountLimit(1,id)
+	-- ย้ายการสังเวยไปไว้ที่ Cost
+	e2:SetCost(s.rmcost) 
 	e2:SetTarget(s.rmtg)
 	e2:SetOperation(s.rmop)
 	c:RegisterEffect(e2)
@@ -47,43 +49,42 @@ function s.matfilter(c)
 end
 
 -- =======================================================================
--- [Effect 2] Kaiju Style Removal
+-- [Effect 2] Kaiju Style Removal (Fixed Logic)
 -- =======================================================================
 
--- [เพิ่มใหม่] ฟังก์ชันกรอง: ต้องสังเวยได้ และ ต้องไม่ใช่ Mystery Case Token
-function s.tributefilter(c)
-	return c:IsReleasable() and not c:IsCode(TOKEN_ID)
+function s.tributefilter(c,tp)
+	-- เช็คว่าสังเวยได้ไหม (IsReleasable) และต้องสังเวยให้เราเป็นคนจ่าย (REASON_COST)
+	return c:IsReleasable(REASON_COST) and not c:IsCode(TOKEN_ID) 
+		and (Duel.GetMZoneCount(1-tp,c,tp)>0) -- เช็คว่าถ้าสังเวยตัวนี้ไป จะมีช่องว่างให้ Token ลงไหม
+end
+
+function s.rmcost(e,tp,eg,ep,ev,re,r,rp,chk)
+	-- [CHK=0] มีมอนสเตอร์ให้สังเวยไหม
+	if chk==0 then return Duel.IsExistingMatchingCard(s.tributefilter,tp,0,LOCATION_MZONE,1,nil,tp) end
+	
+	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_RELEASE)
+	-- เลือกสังเวย
+	local g=Duel.SelectMatchingCard(tp,s.tributefilter,tp,0,LOCATION_MZONE,1,1,nil,tp)
+	-- สั่งสังเวยด้วย REASON_COST (เคารพกฎห้ามสังเวย)
+	Duel.Release(g,REASON_COST)
 end
 
 function s.rmtg(e,tp,eg,ep,ev,re,r,rp,chk)
-	-- เช็คเงื่อนไข:
-	-- 1. มีมอนสเตอร์ให้สังเวย (โดยใช้ Filter ใหม่ที่ห้ามกิน Token)
-	-- 2. ช่องว่าง > -1
-	-- 3. อัญเชิญ Token ได้
+	-- [CHK=0] เช็คว่าเสก Token ได้ไหม (ไม่ต้องเช็คช่องว่างแล้ว เพราะเช็คเผื่อใน Cost แล้ว)
 	if chk==0 then 
-		return Duel.IsExistingMatchingCard(s.tributefilter,tp,0,LOCATION_MZONE,1,nil)
-		and Duel.GetLocationCount(1-tp,LOCATION_MZONE)>-1
-		and Duel.IsPlayerCanSpecialSummonMonster(tp,TOKEN_ID,0,TYPE_TOKEN+TYPE_MONSTER,0,500,1,RACE_MACHINE,ATTRIBUTE_DARK,POS_FACEUP_DEFENSE,1-tp)
+		return Duel.IsPlayerCanSpecialSummonMonster(tp,TOKEN_ID,0,TYPE_TOKEN+TYPE_MONSTER,0,500,1,RACE_MACHINE,ATTRIBUTE_DARK,POS_FACEUP_DEFENSE,1-tp)
 	end
-	Duel.SetOperationInfo(0,CATEGORY_RELEASE,nil,1,0,0)
 	Duel.SetOperationInfo(0,CATEGORY_TOKEN,nil,1,0,0)
 	Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,0)
 end
 
 function s.rmop(e,tp,eg,ep,ev,re,r,rp)
-	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_RELEASE)
-	-- เลือกสังเวย (ใช้ Filter ใหม่ ห้ามกิน Token)
-	local g=Duel.SelectMatchingCard(tp,s.tributefilter,tp,0,LOCATION_MZONE,1,1,nil)
-	if #g>0 then
-		-- ใช้ REASON_RULE เพื่อทะลุ Unaffected
-		if Duel.Release(g,REASON_RULE)>0 then
-			
-			-- สร้าง Token
-			local token=Duel.CreateToken(tp,TOKEN_ID)
-			
-			-- สั่งอัญเชิญทันที (บังคับลง)
-			Duel.SpecialSummon(token,0,tp,1-tp,false,false,POS_FACEUP_DEFENSE)
-		end
+	-- ตอนนี้เหลือแค่เสก Token เพราะการสังเวยทำไปแล้วใน Cost
+	if Duel.GetLocationCount(1-tp,LOCATION_MZONE)>0 
+	   and Duel.IsPlayerCanSpecialSummonMonster(tp,TOKEN_ID,0,TYPE_TOKEN+TYPE_MONSTER,0,500,1,RACE_MACHINE,ATTRIBUTE_DARK,POS_FACEUP_DEFENSE,1-tp) then
+		
+		local token=Duel.CreateToken(tp,TOKEN_ID)
+		Duel.SpecialSummon(token,0,tp,1-tp,false,false,POS_FACEUP_DEFENSE)
 	end
 end
 

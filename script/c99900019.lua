@@ -5,7 +5,7 @@ local NIKKE_SET_ID = 0xc02
 local FIELD_SPELL_ID = 99900016
 
 function s.initial_effect(c)
-	-- [Xyz Summon Procedure]
+	-- [Xyz Summon Procedure] (Manual Brute Force)
 	c:EnableReviveLimit()
 	local e0=Effect.CreateEffect(c)
 	e0:SetDescription(1165)
@@ -19,7 +19,7 @@ function s.initial_effect(c)
 	e0:SetValue(SUMMON_TYPE_XYZ)
 	c:RegisterEffect(e0)
 
-	-- 1. If Xyz Summoned: Attach 1 Monster
+	-- 1. If Xyz Summoned: Attach 1 Monster & Transfer Materials
 	local e1=Effect.CreateEffect(c)
 	e1:SetDescription(aux.Stringid(id,0))
 	e1:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
@@ -30,7 +30,7 @@ function s.initial_effect(c)
 	e1:SetOperation(s.matop)
 	c:RegisterEffect(e1)
 	
-	-- 2. Field Synergy
+	-- 2. Field Synergy (Gain ATK from Materials)
 	local e2=Effect.CreateEffect(c)
 	e2:SetType(EFFECT_TYPE_SINGLE)
 	e2:SetCode(EFFECT_UPDATE_ATTACK)
@@ -51,7 +51,7 @@ function s.initial_effect(c)
 	e3:SetOperation(s.boostop)
 	c:RegisterEffect(e3,false,REGISTER_FLAG_DETACH_XMAT)
 
-	-- 4. Protection: Absorb Monster + Transfer Materials (Updated!)
+	-- 4. Protection: Absorb instead of Leaving (Except This Card + Transfer Materials)
 	local e4=Effect.CreateEffect(c)
 	e4:SetDescription(aux.Stringid(id,2))
 	e4:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
@@ -66,9 +66,12 @@ end
 -- =======================================================================
 -- [MANUAL XYZ LOGIC]
 -- =======================================================================
+
+-- [แก้ไขจุดนี้จุดเดียว] เพิ่ม Race Machine
 function s.xyzfilter(c,xyzc)
-	return c:IsFaceup() and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
+	return c:IsFaceup() and c:IsRace(RACE_MACHINE) and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
 end
+
 function s.xyzcheck(g,tp,xyzc)
 	return g:GetCount()==2 and Duel.GetLocationCountFromEx(tp,tp,g,xyzc)>0
 end
@@ -103,7 +106,7 @@ function s.xyzop(e,tp,eg,ep,ev,re,r,rp,c,og,min,max)
 end
 
 -- =======================================================================
--- [Effect 1] Attach Monster
+-- [Effect 1] Attach Monster & Transfer Materials
 -- =======================================================================
 function s.matcon(e,tp,eg,ep,ev,re,r,rp)
 	return e:GetHandler():IsSummonType(SUMMON_TYPE_XYZ)
@@ -123,9 +126,9 @@ function s.matop(e,tp,eg,ep,ev,re,r,rp)
 	if c:IsRelateToEffect(e) and tc:IsRelateToEffect(e) and not tc:IsImmuneToEffect(e) then
 		local og=tc:GetOverlayGroup()
 		if #og>0 then
-			Duel.Overlay(c,og)
+			Duel.Overlay(c,og) -- ย้ายของเก่ามาที่ Laplace
 		end
-		Duel.Overlay(c,Group.FromCards(tc))
+		Duel.Overlay(c,Group.FromCards(tc)) -- ย้ายตัวมันเองตามมา
 	end
 end
 
@@ -180,12 +183,13 @@ function s.boostop(e,tp,eg,ep,ev,re,r,rp)
 end
 
 -- =======================================================================
--- [Effect 4] Absorb instead of Leaving (Logic Updated)
+-- [Effect 4] Absorb instead of Leaving (Except This Card)
 -- =======================================================================
-function s.repfilter(c,tp)
+function s.repfilter(c,tp,handler)
 	return c:IsControler(tp) and c:IsSetCard(NIKKE_SET_ID) and c:IsOnField()
 		and c:IsType(TYPE_MONSTER)
 		and c:IsReason(REASON_EFFECT) and c:GetReasonPlayer()==1-tp
+		and c~=handler -- ต้องไม่ใช่ Laplace
 end
 function s.xyz_dest_filter(c)
 	return c:IsFaceup() and c:IsSetCard(NIKKE_SET_ID) and c:IsType(TYPE_XYZ)
@@ -194,10 +198,11 @@ end
 function s.reptg(e,tp,eg,ep,ev,re,r,rp,chk)
 	local c=e:GetHandler()
 	local xyz_g=Duel.GetMatchingGroup(s.xyz_dest_filter,tp,LOCATION_MZONE,0,nil)
-	if chk==0 then return eg:IsExists(s.repfilter,1,nil,tp) and #xyz_g>0 end
+	
+	if chk==0 then return eg:IsExists(s.repfilter,1,nil,tp,c) and #xyz_g>0 end
 	
 	if Duel.SelectYesNo(tp, aux.Stringid(id, 2)) then
-		local g=eg:Filter(s.repfilter,nil,tp)
+		local g=eg:Filter(s.repfilter,nil,tp,c)
 		local container=Group.CreateGroup()
 		container:Merge(g)
 		e:SetLabelObject(container)
@@ -207,10 +212,9 @@ function s.reptg(e,tp,eg,ep,ev,re,r,rp,chk)
 	end
 end
 function s.repval(e,c)
-	return s.repfilter(c,e:GetHandlerPlayer())
+	return s.repfilter(c,e:GetHandlerPlayer(),e:GetHandler())
 end
 
--- [UPDATE] แก้ไขให้โอนย้ายวัตถุดิบ (Transfer Materials) ก่อนดูดตัวแม่
 function s.repop(e,tp,eg,ep,ev,re,r,rp)
 	local g=e:GetLabelObject()
 	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_FACEUP)
@@ -220,15 +224,15 @@ function s.repop(e,tp,eg,ep,ev,re,r,rp)
 	if dest and #g>0 then
 		Duel.Hint(HINT_CARD,0,id)
 		
-		-- ลูปเพื่อย้ายวัตถุดิบก่อน
+		-- Loop ย้ายวัตถุดิบเก่าก่อน
 		for tc in aux.Next(g) do
 			local og=tc:GetOverlayGroup()
 			if #og>0 then
-				Duel.Overlay(dest,og) -- ย้าย Overlay Unit ไปที่ตัวรับแทน
+				Duel.Overlay(dest,og)
 			end
 		end
 		
-		-- ย้ายตัว Monster ที่จะตาย ไปเป็นวัตถุดิบ
+		-- ย้ายตัว Monster ตามไป
 		Duel.Overlay(dest,g)
 	end
 end

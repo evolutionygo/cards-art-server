@@ -2,143 +2,187 @@
 -- ID: 99900012
 local s,id=GetID()
 local TACTICAL_FLAG_ID = 99900009 
+local COUNTER_TACTICAL = 0x1099
 
 function s.initial_effect(c)
 	c:EnableReviveLimit()
-	
-	-- 1. Retrieve + Optional SS (เหมือนเดิม)
+	c:EnableCounterPermit(COUNTER_TACTICAL)
+
+	-- 1. On Summon: Place Counters & Heal
 	local e1=Effect.CreateEffect(c)
 	e1:SetDescription(aux.Stringid(id,0))
-	e1:SetCategory(CATEGORY_TOHAND+CATEGORY_SPECIAL_SUMMON)
-	e1:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
-	e1:SetProperty(EFFECT_FLAG_DELAY+EFFECT_FLAG_CARD_TARGET)
+	e1:SetCategory(CATEGORY_COUNTER+CATEGORY_RECOVER)
+	e1:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_F)
 	e1:SetCode(EVENT_SPSUMMON_SUCCESS)
-	e1:SetCountLimit(1,id)
-	e1:SetTarget(s.thtg)
-	e1:SetOperation(s.thop)
+	e1:SetTarget(s.cttg_sum)
+	e1:SetOperation(s.ctop_sum)
 	c:RegisterEffect(e1)
 
-	-- 2. Auto-Negate OR Heal (แก้ไข Condition ให้แม่นยำที่สุด)
+	-- 2. Opponent Activates: Place Counter & Heal
 	local e2=Effect.CreateEffect(c)
-	e2:SetDescription(aux.Stringid(id,2))
-	e2:SetCategory(CATEGORY_NEGATE+CATEGORY_RECOVER+CATEGORY_ATKCHANGE)
-	e2:SetType(EFFECT_TYPE_QUICK_F) -- บังคับใช้
+	e2:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
 	e2:SetCode(EVENT_CHAINING)
-	e2:SetProperty(EFFECT_FLAG_DAMAGE_STEP+EFFECT_FLAG_DAMAGE_CAL)
 	e2:SetRange(LOCATION_MZONE)
-	e2:SetCountLimit(1,EFFECT_COUNT_CODE_CHAIN)
-	e2:SetCondition(s.combined_con)
-	e2:SetTarget(s.combined_tg)
-	e2:SetOperation(s.combined_op)
+	e2:SetCondition(s.ctcon_opp)
+	e2:SetOperation(s.ctop_opp)
 	c:RegisterEffect(e2)
+
+	-- 3. Ignition Effects
+	-- [A] Add to Hand (Cost 2)
+	local e3=Effect.CreateEffect(c)
+	e3:SetDescription(aux.Stringid(id,1))
+	e3:SetCategory(CATEGORY_TOHAND)
+	e3:SetType(EFFECT_TYPE_IGNITION)
+	e3:SetRange(LOCATION_MZONE)
+	e3:SetProperty(EFFECT_FLAG_CARD_TARGET)
+	e3:SetCost(s.cost_add)
+	e3:SetTarget(s.target_add)
+	e3:SetOperation(s.op_add)
+	c:RegisterEffect(e3)
+
+	-- [B] Special Summon (Cost 3)
+	local e4=Effect.CreateEffect(c)
+	e4:SetDescription(aux.Stringid(id,2))
+	e4:SetCategory(CATEGORY_SPECIAL_SUMMON)
+	e4:SetType(EFFECT_TYPE_IGNITION)
+	e4:SetRange(LOCATION_MZONE)
+	e4:SetProperty(EFFECT_FLAG_CARD_TARGET)
+	e4:SetCost(s.cost_ss)
+	e4:SetTarget(s.target_ss)
+	e4:SetOperation(s.op_ss)
+	c:RegisterEffect(e4)
+
+	-- 4. Quick Effect: Negate S/T (Cost 2) - Field Only
+	local e5=Effect.CreateEffect(c)
+	e5:SetDescription(aux.Stringid(id,3))
+	e5:SetCategory(CATEGORY_NEGATE)
+	e5:SetType(EFFECT_TYPE_QUICK_O)
+	e5:SetCode(EVENT_CHAINING)
+	e5:SetProperty(EFFECT_FLAG_DAMAGE_STEP+EFFECT_FLAG_DAMAGE_CAL)
+	e5:SetRange(LOCATION_MZONE)
+	e5:SetCondition(s.negcon)
+	e5:SetCost(s.negcost)
+	e5:SetTarget(s.negtg)
+	e5:SetOperation(s.negop)
+	c:RegisterEffect(e5)
 end
 
 -- ==================================================================
--- Logic 1: Retrieve + SS from GY
+-- On Summon Logic
 -- ==================================================================
-function s.thfilter(c)
+function s.cttg_sum(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then return true end
+	Duel.SetOperationInfo(0,CATEGORY_COUNTER,nil,1,0,COUNTER_TACTICAL)
+	Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,tp,300)
+end
+function s.ctop_sum(e,tp,eg,ep,ev,re,r,rp)
+	local c=e:GetHandler()
+	if c:IsRelateToEffect(e) and c:IsFaceup() then
+		local count = 2
+		if Duel.GetFlagEffect(tp,TACTICAL_FLAG_ID) > 0 then
+			count = 3
+		end
+		c:AddCounter(COUNTER_TACTICAL,count)
+		Duel.Recover(tp,count*300,REASON_EFFECT)
+	end
+end
+
+-- ==================================================================
+-- Opponent Activates Logic
+-- ==================================================================
+function s.ctcon_opp(e,tp,eg,ep,ev,re,r,rp)
+	local loc = re:GetActivateLocation()
+	if rp==tp then return false end
+	-- นับเฉพาะบนสนาม (S/T Zone, Field Zone, Monster Zone, Pendulum Zone)
+	if (loc==LOCATION_SZONE or loc==LOCATION_MZONE or loc==LOCATION_FZONE or loc==LOCATION_PZONE) then
+		return true
+	end
+	-- นับการ์ดเวท/กับดักที่ใช้จากมือ
+	if loc==LOCATION_HAND and re:IsActiveType(TYPE_SPELL+TYPE_TRAP) then
+		return true
+	end
+	return false
+end
+function s.ctop_opp(e,tp,eg,ep,ev,re,r,rp)
+	local c=e:GetHandler()
+	if c:IsCanAddCounter(COUNTER_TACTICAL,1) then
+		c:AddCounter(COUNTER_TACTICAL,1)
+		Duel.Hint(HINT_CARD,0,id)
+		Duel.Recover(tp,300,REASON_EFFECT)
+	end
+end
+
+-- ==================================================================
+-- Ignition Effects
+-- ==================================================================
+function s.nikke_filter_monster(c)
+	return c:IsSetCard(0xc02) and c:IsType(TYPE_MONSTER)
+end
+
+-- [A] Add to Hand (Cost 2)
+function s.cost_add(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then return e:GetHandler():IsCanRemoveCounter(tp,COUNTER_TACTICAL,2,REASON_COST) end
+	e:GetHandler():RemoveCounter(tp,COUNTER_TACTICAL,2,REASON_COST)
+end
+function s.filter_add(c)
 	return c:IsSetCard(0xc02) and c:IsAbleToHand()
 end
-
-function s.spfilter(c,e,tp)
-	return c:IsSetCard(0xc02) and c:IsCanBeSpecialSummoned(e,0,tp,false,false)
-end
-
-function s.thtg(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
-	if chkc then return chkc:IsLocation(LOCATION_GRAVE) and chkc:IsControler(tp) and s.thfilter(chkc) end
-	if chk==0 then return Duel.IsExistingTarget(s.thfilter,tp,LOCATION_GRAVE,0,1,nil) end
+function s.target_add(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
+	if chkc then return chkc:IsLocation(LOCATION_GRAVE) and chkc:IsControler(tp) and s.filter_add(chkc) end
+	if chk==0 then return Duel.IsExistingTarget(s.filter_add,tp,LOCATION_GRAVE,0,1,nil) end
 	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_ATOHAND)
-	local g=Duel.SelectTarget(tp,s.thfilter,tp,LOCATION_GRAVE,0,1,1,nil)
+	local g=Duel.SelectTarget(tp,s.filter_add,tp,LOCATION_GRAVE,0,1,1,nil)
 	Duel.SetOperationInfo(0,CATEGORY_TOHAND,g,1,0,0)
-	
-	local can_ss = Duel.GetLocationCount(tp,LOCATION_MZONE)>0 
-				   and Duel.IsExistingMatchingCard(s.spfilter,tp,LOCATION_GRAVE,0,1,nil,e,tp)
-	if Duel.GetFlagEffect(tp,TACTICAL_FLAG_ID)>0 and can_ss then
-		Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_GRAVE)
-	end
 end
-
-function s.thop(e,tp,eg,ep,ev,re,r,rp)
+function s.op_add(e,tp,eg,ep,ev,re,r,rp)
 	local tc=Duel.GetFirstTarget()
 	if tc:IsRelateToEffect(e) then
-		if Duel.SendtoHand(tc,nil,REASON_EFFECT)~=0 then
-			Duel.ConfirmCards(1-tp,tc)
-			if Duel.GetFlagEffect(tp,TACTICAL_FLAG_ID)>0 
-				and Duel.GetLocationCount(tp,LOCATION_MZONE)>0 
-				and Duel.IsExistingMatchingCard(s.spfilter,tp,LOCATION_GRAVE,0,1,nil,e,tp) 
-				and Duel.SelectYesNo(tp,aux.Stringid(id,3)) then
-				Duel.BreakEffect()
-				Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)
-				local g=Duel.SelectMatchingCard(tp,s.spfilter,tp,LOCATION_GRAVE,0,1,1,nil,e,tp)
-				if #g>0 then
-					Duel.SpecialSummon(g,0,tp,tp,false,false,POS_FACEUP)
-				end
-			end
-		end
+		Duel.SendtoHand(tc,nil,REASON_EFFECT)
+	end
+end
+
+-- [B] Special Summon (Cost 3)
+function s.cost_ss(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then return e:GetHandler():IsCanRemoveCounter(tp,COUNTER_TACTICAL,3,REASON_COST) end
+	e:GetHandler():RemoveCounter(tp,COUNTER_TACTICAL,3,REASON_COST)
+end
+function s.filter_ss(c,e,tp)
+	return s.nikke_filter_monster(c) and c:IsCanBeSpecialSummoned(e,0,tp,false,false)
+end
+function s.target_ss(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
+	if chkc then return chkc:IsLocation(LOCATION_GRAVE) and chkc:IsControler(tp) and s.filter_ss(chkc,e,tp) end
+	if chk==0 then return Duel.GetLocationCount(tp,LOCATION_MZONE)>0 
+		and Duel.IsExistingTarget(s.filter_ss,tp,LOCATION_GRAVE,0,1,nil,e,tp) end
+	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)
+	local g=Duel.SelectTarget(tp,s.filter_ss,tp,LOCATION_GRAVE,0,1,1,nil,e,tp)
+	Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,g,1,0,0)
+end
+function s.op_ss(e,tp,eg,ep,ev,re,r,rp)
+	local tc=Duel.GetFirstTarget()
+	if tc:IsRelateToEffect(e) then
+		Duel.SpecialSummon(tc,0,tp,tp,false,false,POS_FACEUP)
 	end
 end
 
 -- ==================================================================
--- Logic 2: Combined Decision (Negate OR Heal) - Final Fix
+-- Quick Effect: Negate S/T
 -- ==================================================================
-
-function s.combined_con(e,tp,eg,ep,ev,re,r,rp)
-	-- 1. ต้องเป็นอีกฝ่ายใช้
-	if rp == tp then return false end
-
-	-- 2. ดึงตำแหน่งที่ Activate มาเช็ค
-	local loc = re:GetActivateLocation()
+function s.negcon(e,tp,eg,ep,ev,re,r,rp)
+	if rp==tp or not re:IsActiveType(TYPE_SPELL+TYPE_TRAP) or not Duel.IsChainNegatable(ev) then return false end
 	
-	-- กรองทิ้ง 1: ถ้ามาจาก สุสาน(0x10), เด็ค(0x01), หรือ Banish(0x20) -> ไม่เอาเลย
-	if (loc & (LOCATION_GRAVE+LOCATION_DECK+LOCATION_REMOVED)) ~= 0 then
-		return false
-	end
-
-	-- กรองทิ้ง 2: ถ้ามาจาก มือ(0x02)
-	if (loc & LOCATION_HAND) ~= 0 then
-		-- ถ้าเป็น Monster Effect ในมือ (Hand Trap) -> ไม่เอา
-		if re:GetHandler():IsType(TYPE_MONSTER) then
-			return false
-		end
-		-- ถ้าเป็น Spell/Trap จากมือ -> ผ่าน (เพราะถือว่า Activate เพื่อลงสนาม)
-	end
-
-	-- นอกเหนือจากนั้น (MZONE, SZONE, FZONE, PZONE) -> ผ่านหมด
-	return true
+	local loc = re:GetActivateLocation()
+	-- เช็คตำแหน่ง: ต้องเป็นการ์ดที่ "อยู่บนสนาม" (S/T Zone, Field Zone) หรือใช้จากมือ
+	return loc==LOCATION_SZONE or loc==LOCATION_FZONE or loc==LOCATION_PZONE or loc==LOCATION_HAND
 end
 
-function s.combined_tg(e,tp,eg,ep,ev,re,r,rp,chk)
+function s.negcost(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then return e:GetHandler():IsCanRemoveCounter(tp,COUNTER_TACTICAL,2,REASON_COST) end
+	e:GetHandler():RemoveCounter(tp,COUNTER_TACTICAL,2,REASON_COST)
+end
+function s.negtg(e,tp,eg,ep,ev,re,r,rp,chk)
 	if chk==0 then return true end
 	Duel.SetOperationInfo(0,CATEGORY_NEGATE,eg,1,0,0)
-	Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,tp,500)
 end
-
-function s.combined_op(e,tp,eg,ep,ev,re,r,rp)
-	local c=e:GetHandler()
-	
-	-- เงื่อนไข Negate: 
-	-- Spell/Trap + เป็นการ Activate การ์ด + Negate ได้ + LP > 2000
-	local is_spell_trap = re:IsActiveType(TYPE_SPELL+TYPE_TRAP)
-	local is_activation = re:IsHasType(EFFECT_TYPE_ACTIVATE) 
-	local can_negate = Duel.IsChainNegatable(ev)
-	local enough_lp = Duel.GetLP(tp) > 2000
-
-	if is_spell_trap and is_activation and can_negate and enough_lp then
-		-- [[ โหมด Negate ]]
-		Duel.PayLPCost(tp,1000)
-		Duel.NegateActivation(ev) -- ไม่ทำลาย
-	else
-		-- [[ โหมด Heal & Buff ]]
-		Duel.Hint(HINT_CARD,0,id)
-		Duel.Recover(tp,500,REASON_EFFECT)
-		
-		if c:IsRelateToEffect(e) and c:IsFaceup() then
-			local e1=Effect.CreateEffect(c)
-			e1:SetType(EFFECT_TYPE_SINGLE)
-			e1:SetCode(EFFECT_UPDATE_ATTACK)
-			e1:SetValue(300)
-			e1:SetReset(RESET_EVENT+RESETS_STANDARD)
-			c:RegisterEffect(e1)
-		end
-	end
+function s.negop(e,tp,eg,ep,ev,re,r,rp)
+	Duel.NegateActivation(ev)
 end

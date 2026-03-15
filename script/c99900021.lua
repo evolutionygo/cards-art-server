@@ -4,7 +4,7 @@ local s,id=GetID()
 local NIKKE_SET_ID = 0xc02
 
 function s.initial_effect(c)
-	-- 1. Discard Search
+	-- 1. Discard to Search
 	local e1=Effect.CreateEffect(c)
 	e1:SetDescription(aux.Stringid(id,0))
 	e1:SetCategory(CATEGORY_TOHAND+CATEGORY_SEARCH)
@@ -26,19 +26,17 @@ function s.initial_effect(c)
 	e2:SetCondition(s.spcon)
 	c:RegisterEffect(e2)
 
-	-- 3. Synchro Shortcut (UNLIMITED USE & FULL FIELD FIX)
+	-- 3. Synchro Shortcut (Full Fixed)
 	local e3=Effect.CreateEffect(c)
 	e3:SetDescription(aux.Stringid(id,1))
 	e3:SetCategory(CATEGORY_SPECIAL_SUMMON)
 	e3:SetType(EFFECT_TYPE_IGNITION)
 	e3:SetRange(LOCATION_MZONE)
-	-- e3:SetCountLimit(1) -- ไม่จำกัดครั้ง
-	e3:SetCost(s.syncost)
 	e3:SetTarget(s.syntg)
 	e3:SetOperation(s.synop)
 	c:RegisterEffect(e3)
 
-	-- 4. [AUTO] Treat as Tuner
+	-- 4. Treated as a Tuner
 	local e4=Effect.CreateEffect(c)
 	e4:SetType(EFFECT_TYPE_SINGLE)
 	e4:SetProperty(EFFECT_FLAG_SINGLE_RANGE)
@@ -47,7 +45,7 @@ function s.initial_effect(c)
 	e4:SetValue(TYPE_TUNER)
 	c:RegisterEffect(e4)
 
-	-- 5. [AUTO] Non-Tuner for Nikke Synchro
+	-- 5. Can be treated as Non-Tuner
 	local e5=Effect.CreateEffect(c)
 	e5:SetType(EFFECT_TYPE_SINGLE)
 	e5:SetProperty(EFFECT_FLAG_SINGLE_RANGE)
@@ -57,24 +55,26 @@ function s.initial_effect(c)
 	c:RegisterEffect(e5)
 end
 
-function s.ntval(c,sc,tp) return sc:IsSetCard(NIKKE_SET_ID) end
+-- Logic: Non-Tuner check
+function s.ntval(c,sc,tp) 
+	return not sc or sc:IsSetCard(NIKKE_SET_ID) 
+end
 
--- [Effect 1] Search
+-- ==================================================================
+-- Effect 1: Search
+-- ==================================================================
 function s.thcost(e,tp,eg,ep,ev,re,r,rp,chk)
 	local c=e:GetHandler()
 	if chk==0 then return c:IsDiscardable() end
 	Duel.SendtoGrave(c,REASON_COST+REASON_DISCARD)
 end
-
 function s.thfilter(c) 
 	return c:IsSetCard(NIKKE_SET_ID) and c:IsLevelBelow(3) and c:IsType(TYPE_MONSTER) and c:IsAbleToHand() 
 end
-
 function s.thtg(e,tp,eg,ep,ev,re,r,rp,chk)
 	if chk==0 then return Duel.IsExistingMatchingCard(s.thfilter,tp,LOCATION_DECK,0,1,nil) end
 	Duel.SetOperationInfo(0,CATEGORY_TOHAND,nil,1,tp,LOCATION_DECK)
 end
-
 function s.thop(e,tp,eg,ep,ev,re,r,rp)
 	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_ATOHAND)
 	local g=Duel.SelectMatchingCard(tp,s.thfilter,tp,LOCATION_DECK,0,1,1,nil)
@@ -84,7 +84,9 @@ function s.thop(e,tp,eg,ep,ev,re,r,rp)
 	end
 end
 
--- [Effect 2] SP Summon
+-- ==================================================================
+-- Effect 2: Self Summon
+-- ==================================================================
 function s.spfilter(c) return c:IsFaceup() and c:IsSetCard(NIKKE_SET_ID) end
 function s.spcon(e,c)
 	if c==nil then return true end
@@ -92,44 +94,73 @@ function s.spcon(e,c)
 		and Duel.IsExistingMatchingCard(s.spfilter,c:GetControler(),LOCATION_MZONE,0,1,nil)
 end
 
--- [Effect 3] Synchro Shortcut Logic (Updated for Full Field)
+-- ==================================================================
+-- Effect 3: Synchro Shortcut (Improved Logic)
+-- ==================================================================
 
+-- Filter เพื่อนที่จะเอามาถู: ต้องเป็น Machine / ส่งลงสุสานได้ / และ *ต้องเป็นวัตถุดิบซินโครได้*
 function s.matfilter(c)
-	return c:IsRace(RACE_MACHINE) and c:IsAbleToGraveAsCost()
+	return c:IsRace(RACE_MACHINE) 
+		and c:IsAbleToGrave() 
+		and c:IsCanBeSynchroMaterial()
 end
 
--- [แก้ไข] เพิ่ม lc_group เพื่อรับข้อมูลการ์ดที่จะหายไป
-function s.synchrofilter(c,e,tp,lc_group)
-	return c:IsSetCard(NIKKE_SET_ID) and c:IsType(TYPE_SYNCHRO) 
+-- Filter ตัว Synchro ปลายทาง: เช็คว่าลงได้ไหม โดยคำนวณช่องที่จะว่างลงจากการเอามอนสเตอร์กลุ่ม mg ออกไป
+function s.synchrofilter(c,e,tp,mg)
+	return c:IsSetCard(NIKKE_SET_ID) and c:IsType(TYPE_SYNCHRO)
 		and c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_SYNCHRO,tp,false,false)
-		-- คำนวณช่องว่างโดยหักลบ lc_group ออก
-		and Duel.GetLocationCountFromEx(tp,tp,lc_group,c)>0
-end
-
-function s.syncost(e,tp,eg,ep,ev,re,r,rp,chk)
-	local c=e:GetHandler()
-	if chk==0 then return c:IsAbleToGraveAsCost() 
-		and Duel.IsExistingMatchingCard(s.matfilter,tp,LOCATION_MZONE,0,1,c) end
-	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOGRAVE)
-	local g=Duel.SelectMatchingCard(tp,s.matfilter,tp,LOCATION_MZONE,0,1,1,c)
-	g:AddCard(c)
-	Duel.SendtoGrave(g,REASON_COST)
+		and Duel.GetLocationCountFromEx(tp,tp,mg,c)>0 -- เช็คช่องโดยสมมติว่า mg หายไปแล้ว
 end
 
 function s.syntg(e,tp,eg,ep,ev,re,r,rp,chk)
-	if chk==0 then 
-		-- [แก้ไข] ส่ง e:GetHandler() เข้าไปบอกว่า "ตัวนี้จะหายไปนะ" (แก้ปัญหาสนามเต็ม)
-		return Duel.IsExistingMatchingCard(s.synchrofilter,tp,LOCATION_EXTRA,0,1,nil,e,tp,e:GetHandler()) 
+	local c=e:GetHandler()
+	if chk==0 then
+		-- เงื่อนไข Target:
+		-- 1. ตัวเองต้องส่งลงสุสานได้ และเป็นวัตถุดิบได้
+		if not (c:IsAbleToGrave() and c:IsCanBeSynchroMaterial()) then return false end
+		
+		-- 2. ต้องมีเพื่อน (Machine) บนสนามที่ไม่ใช่ตัวเอง (Exclude c)
+		local g=Duel.GetMatchingGroup(s.matfilter,tp,LOCATION_MZONE,0,c)
+		if #g==0 then return false end
+		
+		-- 3. ต้องมีตัว Synchro ใน Extra ที่เรียกออกมาได้ (โดยคำนวณช่องว่างจาก c ไปก่อนเป็นขั้นต่ำ)
+		return Duel.IsExistingMatchingCard(s.synchrofilter,tp,LOCATION_EXTRA,0,1,nil,e,tp,c)
 	end
 	Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_EXTRA)
+	Duel.SetOperationInfo(0,CATEGORY_TOGRAVE,nil,2,tp,LOCATION_MZONE)
 end
 
 function s.synop(e,tp,eg,ep,ev,re,r,rp)
-	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)
-	-- ส่ง nil เพราะตอนรันผล การ์ดหายไปจริงแล้ว ช่องว่างเกิดขึ้นจริง
-	local g=Duel.SelectMatchingCard(tp,s.synchrofilter,tp,LOCATION_EXTRA,0,1,1,nil,e,tp,nil)
+	local c=e:GetHandler()
+	-- ถ้าตัวเราไม่อยู่บนสนามแล้ว ให้ยกเลิกผล
+	if not c:IsRelateToEffect(e) then return end
+
+	-- 1. เลือกเพื่อน 1 ใบ (บังคับเลือกจาก MZone, ห้ามเลือกตัวเอง)
+	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOGRAVE)
+	local g=Duel.SelectMatchingCard(tp,s.matfilter,tp,LOCATION_MZONE,0,1,1,c)
+	
 	if #g>0 then
-		Duel.SpecialSummon(g,SUMMON_TYPE_SYNCHRO,tp,tp,false,false,POS_FACEUP)
-		g:GetFirst():CompleteProcedure()
+		g:AddCard(c) -- รวมร่าง: เพื่อน + เรา
+		
+		-- 2. เลือกตัว Synchro (โดยคำนวณช่องว่างจากกลุ่ม g ทั้ง 2 ใบ)
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)
+		local sc_group=Duel.SelectMatchingCard(tp,s.synchrofilter,tp,LOCATION_EXTRA,0,1,1,nil,e,tp,g)
+		local sc=sc_group:GetFirst()
+		
+		if sc then
+			-- Set Material: ผูกวัตถุดิบ
+			sc:SetMaterial(g)
+			
+			-- ส่งลงสุสาน (Reason Synchro -> Animation Trigger!)
+			if Duel.SendtoGrave(g,REASON_EFFECT+REASON_MATERIAL+REASON_SYNCHRO) > 0 then
+				
+				-- เช็คอีกรอบเพื่อความชัวร์ว่าลงได้ (กันเหนียว)
+				if Duel.GetLocationCountFromEx(tp,tp,nil,sc) > 0 then
+					Duel.BreakEffect()
+					Duel.SpecialSummon(sc,SUMMON_TYPE_SYNCHRO,tp,tp,false,false,POS_FACEUP)
+					sc:CompleteProcedure()
+				end
+			end
+		end
 	end
 end

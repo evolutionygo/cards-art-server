@@ -4,7 +4,7 @@ local s,id=GetID()
 local NIKKE_SET_ID = 0xc02
 
 function s.initial_effect(c)
-	-- 1. Activate: Special Summon
+	-- 1. Activate: Special Summon (Ignoring Conditions)
 	local e1=Effect.CreateEffect(c)
 	e1:SetCategory(CATEGORY_SPECIAL_SUMMON)
 	e1:SetType(EFFECT_TYPE_ACTIVATE)
@@ -28,9 +28,13 @@ function s.initial_effect(c)
 end
 
 -- ==================================================================
--- Logic 1: Special Summon
+-- Logic 1: Special Summon (Ignore Conditions)
 -- ==================================================================
-function s.spfilter(c,e,tp) return c:IsSetCard(NIKKE_SET_ID) and c:IsCanBeSpecialSummoned(e,0,tp,false,false,POS_FACEUP_DEFENSE) end
+function s.spfilter(c,e,tp) 
+	-- [แก้ไข] เปลี่ยนพารามิเตอร์เป็น true, false เพื่อ "ละเว้นเงื่อนไขการอัญเชิญ"
+	return c:IsSetCard(NIKKE_SET_ID) and c:IsCanBeSpecialSummoned(e,0,tp,true,false,POS_FACEUP_DEFENSE) 
+end
+
 function s.sptg(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
 	if chkc then return chkc:IsLocation(LOCATION_GRAVE) and chkc:IsControler(tp) and s.spfilter(chkc,e,tp) end
 	if chk==0 then return Duel.GetLocationCount(tp,LOCATION_MZONE)>0
@@ -39,10 +43,12 @@ function s.sptg(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
 	local g=Duel.SelectTarget(tp,s.spfilter,tp,LOCATION_GRAVE,0,1,1,nil,e,tp)
 	Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,g,1,0,0)
 end
+
 function s.spop(e,tp,eg,ep,ev,re,r,rp)
 	local tc=Duel.GetFirstTarget()
 	if tc:IsRelateToEffect(e) then
-		Duel.SpecialSummon(tc,0,tp,tp,false,false,POS_FACEUP_DEFENSE)
+		-- [แก้ไข] สั่งอัญเชิญแบบละเว้นเงื่อนไข (true, false)
+		Duel.SpecialSummon(tc,0,tp,tp,true,false,POS_FACEUP_DEFENSE)
 	end
 end
 
@@ -85,7 +91,7 @@ function s.eqop(e,tp,eg,ep,ev,re,r,rp)
 			e2:SetLabelObject(tc)
 			c:RegisterEffect(e2)
 
-			-- [Protection] Substitute Leaving Field (Corrected)
+			-- [Protection] Substitute Leaving Field 
 			local e3=Effect.CreateEffect(c)
 			e3:SetType(EFFECT_TYPE_CONTINUOUS+EFFECT_TYPE_FIELD)
 			e3:SetCode(EFFECT_SEND_REPLACE)
@@ -95,6 +101,7 @@ function s.eqop(e,tp,eg,ep,ev,re,r,rp)
 			e3:SetOperation(s.repop)
 			c:RegisterEffect(e3)
 			
+			-- Banish itself if it leaves the field
 			local e5=Effect.CreateEffect(c)
 			e5:SetType(EFFECT_TYPE_SINGLE)
 			e5:SetCode(EFFECT_LEAVE_FIELD_REDIRECT)
@@ -108,23 +115,18 @@ end
 
 function s.eqlimit(e,c) return c==e:GetLabelObject() end
 
--- [จุดที่แก้ไข] Logic การป้องกัน
 function s.reptg(e,tp,eg,ep,ev,re,r,rp,chk)
 	local c=e:GetHandler()
 	local tc=c:GetEquipTarget()
-	-- เช็คเพิ่ม: ต้องมีเป้าหมายที่สวมอยู่ (tc) และเป้าหมายนั้นต้องอยู่ในกลุ่มที่จะโดนเก็บ (eg)
 	if chk==0 then return c:IsAbleToRemove() and not c:IsStatus(STATUS_DESTROY_CONFIRMED)
 		and tc and eg:IsContains(tc) and r&REASON_EFFECT~=0 end
 	return true
 end
 
 function s.repval(e,c)
-	-- [สำคัญมาก] คืนค่า True เฉพาะกับ "การ์ดที่สวมอยู่เท่านั้น"
-	-- ถ้าเป็นตัวอื่น (c) ที่ไม่ใช่ตัวที่สวม (GetEquipTarget) ให้คืนค่า False (ไม่ปกป้อง)
 	return c==e:GetHandler():GetEquipTarget()
 end
 
 function s.repop(e,tp,eg,ep,ev,re,r,rp)
-	-- รีมูฟตัวเองเพื่อรับแทน
 	Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_EFFECT+REASON_REPLACE)
 end

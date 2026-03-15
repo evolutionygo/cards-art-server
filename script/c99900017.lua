@@ -52,12 +52,11 @@ function s.initial_effect(c)
 	c:RegisterEffect(e3)
 
 	-- 3. Active Boost & Protection (Quick Effect)
-	-- [แก้ไข] เปลี่ยนเป็น Quick Effect และเพิ่มคำอธิบาย
 	local e4=Effect.CreateEffect(c)
 	e4:SetDescription(aux.Stringid(id,1))
-	e4:SetCategory(CATEGORY_ATKCHANGE) -- และให้ผล Protection ด้วย
-	e4:SetType(EFFECT_TYPE_QUICK_O) -- เปลี่ยนจาก IGNITION เป็น QUICK_O
-	e4:SetCode(EVENT_FREE_CHAIN)	-- กดใช้ได้ทุกเฟส (Free Chain)
+	e4:SetCategory(CATEGORY_ATKCHANGE)
+	e4:SetType(EFFECT_TYPE_QUICK_O)
+	e4:SetCode(EVENT_FREE_CHAIN)
 	e4:SetProperty(EFFECT_FLAG_CARD_TARGET)
 	e4:SetRange(LOCATION_MZONE)
 	e4:SetCountLimit(1,id)
@@ -70,9 +69,12 @@ end
 -- =======================================================================
 -- [MANUAL XYZ LOGIC]
 -- =======================================================================
+
+-- [แก้ไขจุดนี้จุดเดียว] เพิ่มเงื่อนไข Race Machine
 function s.xyzfilter(c,xyzc)
-	return c:IsFaceup() and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
+	return c:IsFaceup() and c:IsRace(RACE_MACHINE) and c:IsLevel(7) and c:IsCanBeXyzMaterial(xyzc)
 end
+
 function s.xyzcheck(g,tp,xyzc)
 	return g:GetCount()==2
 end
@@ -112,7 +114,7 @@ function s.xyzop(e,tp,eg,ep,ev,re,r,rp,c,og,min,max)
 end
 
 -- =======================================================================
--- [EFFECT LOGIC]
+-- [EFFECT LOGIC] (ส่วนนี้เหมือนเดิม 100%)
 -- =======================================================================
 
 -- [Effect 1] Search
@@ -170,7 +172,7 @@ function s.other_atk_val(e,c)
 	if total > 2500 then return total - 2500 else return 0 end
 end
 
--- [Effect 3] Transfer DEF + Protection (Quick Effect)
+-- [Effect 3] Transfer DEF + Protection
 function s.atkcost(e,tp,eg,ep,ev,re,r,rp,chk)
 	if chk==0 then return e:GetHandler():CheckRemoveOverlayCard(tp,1,REASON_COST) end
 	e:GetHandler():RemoveOverlayCard(tp,1,1,REASON_COST)
@@ -185,7 +187,6 @@ function s.atktg(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
 	Duel.SelectTarget(tp,s.atkfilter,tp,LOCATION_MZONE,0,1,1,e:GetHandler())
 end
 
--- [เพิ่ม] ฟังก์ชันกรองเอฟเฟกต์ (ไม่รับผลจากอีกฝ่าย)
 function s.efilter(e,re)
 	return e:GetOwnerPlayer()~=re:GetOwnerPlayer()
 end
@@ -193,10 +194,7 @@ end
 function s.atkop(e,tp,eg,ep,ev,re,r,rp)
 	local c=e:GetHandler()
 	local tc=Duel.GetFirstTarget()
-	-- ต้องเช็คว่าทั้งคู่ยังอยู่และสัมพันธ์กับเอฟเฟกต์ เพื่อความชัวร์ในการเชื่อมโยงกัน
 	if c:IsRelateToEffect(e) and c:IsFaceup() and tc:IsRelateToEffect(e) and tc:IsFaceup() then
-		
-		-- 1. เพิ่มพลังโจมตีให้เป้าหมาย (ตามเดิม)
 		local def=c:GetDefense() 
 		if def>0 then
 			local e1=Effect.CreateEffect(c)
@@ -206,20 +204,16 @@ function s.atkop(e,tp,eg,ep,ev,re,r,rp)
 			e1:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END)
 			tc:RegisterEffect(e1)
 		end
-		
-		-- 2. เพิ่มสถานะไม่รับผลเอฟเฟกต์ (Immune) ให้ทั้งคู่
-		-- ให้กับเป้าหมาย (Target)
 		local e2=Effect.CreateEffect(c)
-		e2:SetDescription(3110) -- "Unaffected by card effects"
+		e2:SetDescription(3110)
 		e2:SetType(EFFECT_TYPE_SINGLE)
-		e2:SetProperty(EFFECT_FLAG_CLIENT_HINT) -- แสดงไอคอน Immune
+		e2:SetProperty(EFFECT_FLAG_CLIENT_HINT)
 		e2:SetCode(EFFECT_IMMUNE_EFFECT)
 		e2:SetValue(s.efilter)
 		e2:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END)
-		e2:SetOwnerPlayer(tp) -- ระบุเจ้าของเพื่อให้ s.efilter ทำงานถูก
+		e2:SetOwnerPlayer(tp)
 		tc:RegisterEffect(e2)
 
-		-- ให้กับตัวเอง (Maxwell)
 		local e3=e2:Clone()
 		c:RegisterEffect(e3)
 	end
